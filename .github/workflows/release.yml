@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+  build-release:
+    name: Build Release ${{ matrix.target }}
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: token-linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            name: token-linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: token-macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: token-macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: token-windows-amd64.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Build Release
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: ${{ matrix.target != 'x86_64-unknown-linux-gnu' && matrix.os != 'windows-latest' && matrix.os != 'macos-latest' }}
+          command: build
+          args: --release --target ${{ matrix.target }}
+
+      - name: Package Artifact
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            tar -czf ../../../${{ matrix.name }}.tar.gz token.exe
+          else
+            tar -czf ../../../${{ matrix.name }}.tar.gz token
+          fi
+          cd ../../..
+
+      - name: Upload to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ${{ matrix.name }}.tar.gz
+          asset_name: ${{ matrix.name }}.tar.gz
+          asset_content_type: application/gzip
