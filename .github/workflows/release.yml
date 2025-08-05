@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Release for ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-amd64
+            target: x86_64-unknown-linux-gnu
+            bin: token
+            name: token-linux-amd64.tar.gz
+          - os: macos-latest
+            platform: macos-amd64
+            target: x86_64-apple-darwin
+            bin: token
+            name: token-macos-amd64.tar.gz
+          - os: macos-latest
+            platform: macos-arm64
+            target: aarch64-apple-darwin
+            bin: token
+            name: token-macos-arm64.tar.gz
+          - os: windows-latest
+            platform: windows-amd64
+            target: x86_64-pc-windows-msvc
+            bin: token.exe
+            name: token-windows-amd64.zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: |
+          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]] || [[ "${{ matrix.os }}" == "macos-latest" ]] || [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cargo build --release --target ${{ matrix.target }}
+          fi
+
+      - name: Package as archive (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czf ../../../${{ matrix.name }} ${{ matrix.bin }}
+          cd ../../..
+
+      - name: Package as archive (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../${{ matrix.name }} ${{ matrix.bin }}
+          cd ../../..
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+
+  create-release:
+    name: Create Release
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: List files
+        run: |
+          find . -name "*.tar.gz" -o -name "*.zip" | head -10
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            **/*.tar.gz
+            **/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
