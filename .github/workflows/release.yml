@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create Release
+        id: create_release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -19,6 +20,8 @@ jobs:
           release_name: Release ${{ github.ref }}
           draft: false
           prerelease: false
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
 
   build-release:
     name: Build Release ${{ matrix.target }}
@@ -54,23 +57,27 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
-      - name: Build Release
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: ${{ matrix.target != 'x86_64-unknown-linux-gnu' && matrix.os != 'windows-latest' && matrix.os != 'macos-latest' }}
-          command: build
-          args: --release --target ${{ matrix.target }}
+      - name: Install cross (for cross-compilation)
+        if: matrix.target != 'x86_64-unknown-linux-gnu' && matrix.target != 'x86_64-apple-darwin' && matrix.target != 'aarch64-apple-darwin' && matrix.target != 'x86_64-pc-windows-msvc'
+        run: cargo install cross
 
-      - name: Package Artifact
+      - name: Build Release
+        run: |
+          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]] || [[ "${{ matrix.target }}" == "x86_64-apple-darwin" ]] || [[ "${{ matrix.target }}" == "aarch64-apple-darwin" ]] || [[ "${{ matrix.target }}" == "x86_64-pc-windows-msvc" ]]; then
+            cargo build --release --target ${{ matrix.target }}
+          else
+            cross build --release --target ${{ matrix.target }}
+          fi
+        shell: bash
+
+      - name: Prepare Artifact
         shell: bash
         run: |
-          cd target/${{ matrix.target }}/release
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            tar -czf ../../../${{ matrix.name }}.tar.gz token.exe
+            cp "target/${{ matrix.target }}/release/token.exe" "./${{ matrix.name }}"
           else
-            tar -czf ../../../${{ matrix.name }}.tar.gz token
+            cp "target/${{ matrix.target }}/release/token" "./${{ matrix.name }}"
           fi
-          cd ../../..
 
       - name: Upload to Release
         uses: actions/upload-release-asset@v1
@@ -78,6 +85,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ${{ matrix.name }}.tar.gz
-          asset_name: ${{ matrix.name }}.tar.gz
-          asset_content_type: application/gzip
+          asset_path: ${{ matrix.name }}
+          asset_name: ${{ matrix.name }}
+          asset_content_type: application/octet-stream
