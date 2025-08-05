@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   release:
@@ -22,11 +22,6 @@ jobs:
             target: x86_64-apple-darwin
             bin: token
             name: token-macos-amd64.tar.gz
-          - os: macos-latest
-            platform: macos-arm64
-            target: aarch64-apple-darwin
-            bin: token
-            name: token-macos-arm64.tar.gz
           - os: windows-latest
             platform: windows-amd64
             target: x86_64-pc-windows-msvc
@@ -44,10 +39,7 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Build release binary
-        run: |
-          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]] || [[ "${{ matrix.os }}" == "macos-latest" ]] || [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            cargo build --release --target ${{ matrix.target }}
-          fi
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package as archive (Unix)
         if: matrix.os != 'windows-latest'
@@ -64,25 +56,29 @@ jobs:
           cd ../../..
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}
+          if-no-files-found: error
 
   create-release:
     name: Create Release
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
 
       - name: List files
         run: |
           find . -name "*.tar.gz" -o -name "*.zip" | head -10
+          ls -la */*
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -91,5 +87,5 @@ jobs:
             **/*.tar.gz
             **/*.zip
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
